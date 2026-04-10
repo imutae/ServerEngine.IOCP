@@ -33,13 +33,13 @@ namespace SE::Net
 		}
 	}
 
-	bool Listener::Initialize(std::function<bool(Core::IocpObject*)> iocpObjectRegister, std::function<void(Session*)> onConnectedCallback, const char* ip, uint16_t port)
+	bool Listener::Initialize(std::function<bool(Core::IocpObject*)> iocpObjectRegister, std::function<std::shared_ptr<Session>(SOCKET)> onConnectedCallback, const char* ip, uint16_t port)
 	{
 		if (!onConnectedCallback || !iocpObjectRegister || ip == nullptr)
 			return false;
 
 		_iocpObjectRegister = iocpObjectRegister;
-		_onConnectedCallback = onConnectedCallback;
+		_createSession = onConnectedCallback;
 
 		_listenSocket = ::WSASocket(
 			AF_INET,
@@ -190,21 +190,10 @@ namespace SE::Net
 			return;
 		}
 
-		Session* session = new Session();
-		if (session->Initialize(clientSocket) == false)
-		{
-			delete session;
-			::closesocket(clientSocket);
-			if (RegisterAccept() == false)
-			{
-				assert(false && "RegisterAccept failed");
-			}
-			return;
-		}
+		auto session = _createSession(clientSocket);
 
-		if (_iocpObjectRegister(session) == false)
+		if (_iocpObjectRegister(session.get()) == false)
 		{
-			delete session;
 			if (RegisterAccept() == false)
 			{
 				assert(false && "RegisterAccept failed");
@@ -213,7 +202,6 @@ namespace SE::Net
 		}
 
 		session->Start();
-		_onConnectedCallback(session);
 
 		if (RegisterAccept() == false)
 		{
