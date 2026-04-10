@@ -4,6 +4,8 @@
 #include "IocpCore.h"
 #include "Listener.h"
 #include "SessionManager.h"
+#include "Session.h"
+#include "IServerLogic.h"
 
 namespace SE {
 	ServerEngine::ServerEngine() 
@@ -32,7 +34,7 @@ namespace SE {
 		if (_running)
 			return false;
 
-
+		_logic = logic;
 
 		auto context = std::make_unique<Internal::ServerContext>();
 		context->iocpCore = std::make_shared<Core::IocpCore>();
@@ -43,14 +45,29 @@ namespace SE {
 			[ctx = context.get()](Core::IocpObject* obj) -> bool
 			{
 				return ctx->iocpCore->Register(obj);
-			}, 
-			[ctx = context.get(), ip, port](Net::Session* session)
+			},
+			[this, ctx = context.get()](SOCKET socket) -> std::shared_ptr<Net::Session>
 			{
+				auto session = ctx->sessionManager->CreateSession(
+					socket,
+					[this](Net::Session* session, const char* data, int32_t len)
+					{
+						if (_logic)
+							_logic->DispatchPacket(session, data, len);
+					},
+					[this](Net::Session* session)
+					{
+						if (_logic)
+							_logic->OnDisconnected(session);
+					}
+				);
 
-			}
-			, ip, port);
+				return session;
+			},
+			ip,
+			port
+		);
 
-		_logic = logic;
 		_context = std::move(context);
 
 		return true;
