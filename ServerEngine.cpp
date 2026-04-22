@@ -34,6 +34,12 @@ namespace SE {
 		if (_running)
 			return false;
 
+		WSADATA wsaData;
+		if (::WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+		{
+			return false;
+		}
+
 		_logic = logic;
 
 		auto context = std::make_unique<Internal::ServerContext>();
@@ -82,11 +88,8 @@ namespace SE {
 	void ServerEngine::Shutdown()
 	{
 		_running = false;
-		for (auto& thread : _workerThreads)
-		{
-			if (thread.joinable())
-				thread.join();
-		}
+		JoinWorkerThreads();
+		WSACleanup();
 	}
 
 	void ServerEngine::StartWorkerThreads()

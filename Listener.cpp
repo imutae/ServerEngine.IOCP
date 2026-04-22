@@ -50,7 +50,9 @@ namespace SE::Net
 		);
 
 		if (_listenSocket == INVALID_SOCKET)
+		{
 			return false;
+		}
 
 		SOCKADDR_IN addr{};
 		addr.sin_family = AF_INET;
