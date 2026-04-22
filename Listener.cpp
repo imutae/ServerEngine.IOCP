@@ -33,14 +33,13 @@ namespace SE::Net
 		}
 	}
 
-	bool Listener::Initialize(std::function<bool(Core::IocpObject*)> iocpObjectRegister, std::function<std::shared_ptr<Session>(SOCKET)> onConnectedCallback, const char* ip, uint16_t port)
+	bool Listener::Initialize(std::function<bool(Core::IocpObject*)> iocpObjectRegister, std::function<void(SOCKET)> onAccept, const char* ip, uint16_t port)
 	{
-		if (!onConnectedCallback || !iocpObjectRegister || ip == nullptr)
+		if (!onAccept || !iocpObjectRegister || ip == nullptr)
 			return false;
 
 		_iocpObjectRegister = iocpObjectRegister;
-		_createSession = onConnectedCallback;
-
+		_createSession = onAccept;
 		_listenSocket = ::WSASocket(
 			AF_INET,
 			SOCK_STREAM,

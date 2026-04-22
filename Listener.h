@@ -23,7 +23,11 @@ namespace SE::Net
 		void Dispatch(Core::IocpEvent* event, int32_t numOfBytes) override;
 
 	public:
-		bool Initialize(std::function<bool(Core::IocpObject*)> iocpObjectRegister, std::function<std::shared_ptr<Session>(SOCKET)> onConnectedCallback, const char* ip, uint16_t port);
+		bool Initialize(
+			std::function<bool(Core::IocpObject*)> iocpObjectRegister,
+			std::function<void(SOCKET)> onAccept,
+			const char* ip,
+			uint16_t port);
 		void Close();
 
 	private:
@@ -37,6 +41,6 @@ namespace SE::Net
 		LPFN_ACCEPTEX _acceptEx = nullptr;
 
 		Core::AcceptEvent _acceptEvent;
-		std::function<std::shared_ptr<Session>(SOCKET)> _createSession;
+		std::function<void(SOCKET)> _createSession;
 	};
 }

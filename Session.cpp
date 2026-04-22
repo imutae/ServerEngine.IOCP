@@ -47,8 +47,6 @@ namespace SE::Net
 		_socket = socket;
 		_logic = logic;
 
-		_logic->OnConnected(this);
-
 		_isConnected = true;
 
 		return _isConnected;

@@ -46,23 +46,18 @@ namespace SE {
 			{
 				return ctx->iocpCore->Register(obj);
 			},
-			[this, ctx = context.get()](SOCKET socket) -> std::shared_ptr<Net::Session>
+			[this, ctx = context.get()](SOCKET socket)
 			{
-				auto session = ctx->sessionManager->CreateSession(
-					socket,
-					[this](Net::Session* session, const char* data, int32_t len)
-					{
-						if (_logic)
-							_logic->DispatchPacket(session, data, len);
-					},
-					[this](Net::Session* session)
-					{
-						if (_logic)
-							_logic->OnDisconnected(session);
-					}
-				);
+				auto session = ctx->sessionManager->CreateSession(socket, _logic);
 
-				return session;
+				if (!ctx->iocpCore->Register(session.get()))
+				{
+					session->Disconnect();
+					return;
+				}
+
+				session->Start();
+				_logic->OnConnected(session.get());
 			},
 			ip,
 			port
