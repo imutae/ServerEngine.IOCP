@@ -1,4 +1,6 @@
 #pragma once
+#include <WinSock2.h>
+#include <vector>
 
 namespace SE::Core
 {

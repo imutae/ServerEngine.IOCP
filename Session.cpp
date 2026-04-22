@@ -183,12 +183,19 @@ namespace SE::Net
 			Packet::PacketHeader header;
 			::memcpy(&header, _recvBuffer.ReadPos(), sizeof(Packet::PacketHeader));
 
+			if (header.size < sizeof(Packet::PacketHeader))
+			{
+				Disconnect();
+				return;
+			}
+
 			if (_recvBuffer.DataSize() < header.size)
 				break;
 
-			char* packetPtr = _recvBuffer.ReadPos();
+			const char* body = _recvBuffer.ReadPos() + sizeof(Packet::PacketHeader);
+			const int32_t bodyLen = header.size - static_cast<int32_t>(sizeof(Packet::PacketHeader));
 
-			_logic->DispatchPacket(this, packetPtr, header.size);
+			_logic->DispatchPacket(this, header.id, body, bodyLen);
 
 			if (_recvBuffer.OnRead(header.size) == false)
 			{
