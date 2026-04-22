@@ -26,7 +26,7 @@ namespace SE {
 		void Shutdown();
 
 	private:
-		bool StartWorkerThreads();
+		void StartWorkerThreads();
 		void JoinWorkerThreads();
 		void WorkerThreadMain();
 

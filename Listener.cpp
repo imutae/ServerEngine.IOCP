@@ -189,18 +189,7 @@ namespace SE::Net
 			return;
 		}
 
-		auto session = _createSession(clientSocket);
-
-		if (_iocpObjectRegister(session.get()) == false)
-		{
-			if (RegisterAccept() == false)
-			{
-				assert(false && "RegisterAccept failed");
-			}
-			return;
-		}
-
-		session->Start();
+		_createSession(clientSocket);
 
 		if (RegisterAccept() == false)
 		{

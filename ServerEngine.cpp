@@ -41,7 +41,7 @@ namespace SE {
 		context->listener = std::make_shared<Net::Listener>();
 		context->sessionManager = std::make_shared<Net::SessionManager>();
 
-		context->listener->Initialize(
+		bool listenerInitialized = context->listener->Initialize(
 			[ctx = context.get()](Core::IocpObject* obj) -> bool
 			{
 				return ctx->iocpCore->Register(obj);
@@ -63,6 +63,11 @@ namespace SE {
 			port
 		);
 
+		if(listenerInitialized == false)
+			return false;				// TODO: throw exception으로 변환 필요. Main loop이기 때문에 초기화 실패 시 서버가 종료되어야 함.
+
+		context->iocpCore->Register(context->listener.get());
+
 		_context = std::move(context);
 
 		return true;
@@ -71,7 +76,7 @@ namespace SE {
 	void ServerEngine::Run()
 	{
 		_running = true;
-
+		StartWorkerThreads();
 	}
 
 	void ServerEngine::Shutdown()
@@ -84,16 +89,33 @@ namespace SE {
 		}
 	}
 
-	bool ServerEngine::StartWorkerThreads()
+	void ServerEngine::StartWorkerThreads()
 	{
-		return false;
+		uint32_t threadCount = std::thread::hardware_concurrency();
+
+		for (uint32_t i = 0; i < threadCount; i++)
+		{
+			_workerThreads.emplace_back([this]()
+				{
+					WorkerThreadMain();
+				});
+		}
 	}
 
 	void ServerEngine::JoinWorkerThreads()
 	{
+		for (auto& t : _workerThreads)
+		{
+			if (t.joinable())
+				t.join();
+		}
 	}
 
 	void ServerEngine::WorkerThreadMain()
 	{
+		while (_running)
+		{
+			_context->iocpCore->Dispatch();
+		}
 	}
 }

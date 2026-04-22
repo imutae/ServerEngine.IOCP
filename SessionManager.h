@@ -1,5 +1,9 @@
 #pragma once
 
+namespace SE {
+    class IServerLogic;
+}
+
 namespace SE::Net
 {
 	class Session;
