@@ -3,6 +3,11 @@
 #include "IocpEvent.h"
 #include "RecvBuffer.h"
 
+namespace SE
+{
+	class IServerLogic;
+}
+
 namespace SE::Net
 {
 	class Session : public Core::IocpObject
@@ -22,7 +27,7 @@ namespace SE::Net
 		void Dispatch(Core::IocpEvent* event, int32_t numOfBytes) override;
 
 	public:
-		bool Initialize(SOCKET socket, std::function<void(Session*, const char*, int32_t)> onPacketReceivedCallback, std::function<void(Session*)> onDisconnectCallback);
+		bool Initialize(SOCKET socket, IServerLogic* logic);
 		void Disconnect();
 
 	public:
@@ -40,6 +45,8 @@ namespace SE::Net
 		void ProcessSend(Core::IocpEvent* event, int32_t numOfBytes);
 
 	private:
+		IServerLogic* _logic;
+
 		SOCKET _socket;
 		bool _isConnected;
 		int64_t _sessionId;
@@ -48,8 +55,5 @@ namespace SE::Net
 		Core::SendEvent _sendEvent;
 
 		RecvBuffer _recvBuffer;
-
-		std::function<void(Session*, const char*, int32_t)> _onPacketReceivedCallback;
-		std::function<void(Session*)> _onDisconnectCallback;
 	};
 }

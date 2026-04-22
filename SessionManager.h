@@ -7,7 +7,17 @@ namespace SE::Net
     class SessionManager
     {
     public:
-        std::shared_ptr<Session> CreateSession(SOCKET socket, std::function<void(Session*, const char*, int32_t)> onPacketReceivedCallback, std::function<void(Session*)> onDisconnectCallback);
+        SessionManager() = default;
+        ~SessionManager() = default;
+
+        SessionManager(const SessionManager&) = delete;
+        SessionManager& operator=(const SessionManager&) = delete;
+
+        SessionManager(SessionManager&&) = delete;
+        SessionManager& operator=(SessionManager&&) = delete;
+
+    public:
+        std::shared_ptr<Session> CreateSession(SOCKET socket, IServerLogic* logic);
         void RemoveSession(uint64_t sessionId);
 
     private:

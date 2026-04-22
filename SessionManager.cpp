@@ -1,10 +1,11 @@
 #include "pch.h"
 #include "SessionManager.h"
 #include "Session.h"
+#include "IServerLogic.h"
 
 namespace SE::Net
 {
-    std::shared_ptr<Session> SessionManager::CreateSession(SOCKET socket, std::function<void(Session*, const char*, int32_t)> onPacketReceivedCallback, std::function<void(Session*)> onDisconnectCallback)
+    std::shared_ptr<Session> SessionManager::CreateSession(SOCKET socket, IServerLogic* logic)
     {
 		uint64_t sessionId = _sessionIdGenerator.fetch_add(1);
 
@@ -13,7 +14,8 @@ namespace SE::Net
             std::lock_guard<std::mutex> lock(_lock);
             _sessionMap.emplace(sessionId, session);
         }
-		session->Initialize(socket, onPacketReceivedCallback, onDisconnectCallback);
+
+		session->Initialize(socket, logic);
 
         return session;
     }

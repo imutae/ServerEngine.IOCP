@@ -1,11 +1,13 @@
 #include "pch.h"
 #include "Session.h"
 #include "PacketHeader.h"
+#include "IServerLogic.h"
 
 namespace SE::Net
 {
 	Session::Session(uint64_t sessionId)
 	{
+		_logic = nullptr;
 		_socket = INVALID_SOCKET;
 		_isConnected = false;
 		_sessionId = sessionId;
@@ -37,14 +39,15 @@ namespace SE::Net
 		}
 	}
 
-	bool Session::Initialize(SOCKET socket, std::function<void(Session*, const char*, int32_t)> onPacketReceivedCallback, std::function<void(Session*)> onDisconnectCallback)
+	bool Session::Initialize(SOCKET socket, IServerLogic* logic)
 	{
-		if (socket == INVALID_SOCKET || !onPacketReceivedCallback || !onDisconnectCallback)
+		if (socket == INVALID_SOCKET || !logic)
 			return false;
 
 		_socket = socket;
-		_onPacketReceivedCallback = onPacketReceivedCallback;
-		_onDisconnectCallback = onDisconnectCallback;
+		_logic = logic;
+
+		_logic->OnConnected(this);
 
 		_isConnected = true;
 
@@ -60,7 +63,7 @@ namespace SE::Net
 
 		if (_socket != INVALID_SOCKET)
 		{
-			_onDisconnectCallback(this);
+			_logic->OnDisconnected(this);
 			::shutdown(_socket, SD_BOTH);
 			closesocket(_socket);
 			_socket = INVALID_SOCKET;
@@ -173,7 +176,7 @@ namespace SE::Net
 
 			char* packetPtr = _recvBuffer.ReadPos();
 
-			_onPacketReceivedCallback(this, packetPtr, header.size);
+			_logic->DispatchPacket(this, packetPtr, header.size);
 
 			if (_recvBuffer.OnRead(header.size) == false)
 			{
