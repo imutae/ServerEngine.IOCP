@@ -114,37 +114,51 @@ namespace SE::Net
 		PostRecv();
 	}
 
-	void Session::Send(const char* data, int32_t len)
+	bool Session::Send(uint16_t packetId, const void* body, int32_t len)
 	{
-		if (_socket == INVALID_SOCKET || data == nullptr || len <= 0)
-			return;
+		if (_socket == INVALID_SOCKET || body == nullptr || len <= 0 || _isConnected == false)
+			return false;
 
-		auto buffer = std::make_shared<std::vector<char>>(data, data + len);
+		const uint16_t packetSize =
+			static_cast<uint16_t>(sizeof(Packet::PacketHeader) + len);
 
-		_sendEvent.buffer = buffer;
-		_sendEvent.wsaBuf.buf = buffer->data();
-		_sendEvent.wsaBuf.len = static_cast<ULONG>(buffer->size());
+		Core::SendEvent* sendEvent = new Core::SendEvent();
+
+		sendEvent->buffer = std::make_shared<std::vector<char>>(packetSize);
+
+		Packet::PacketHeader header;
+		header.size = packetSize;
+		header.id = packetId;
+
+		::memcpy(sendEvent->buffer->data(), &header, sizeof(header));
+		::memcpy(sendEvent->buffer->data() + sizeof(header), body, len);
+
+		sendEvent->wsaBuf.buf = sendEvent->buffer->data();
+		sendEvent->wsaBuf.len = static_cast<ULONG>(sendEvent->buffer->size());
 
 		DWORD numOfBytes = 0;
-
 		int ret = ::WSASend(
 			_socket,
-			&_sendEvent.wsaBuf,
+			&sendEvent->wsaBuf,
 			1,
 			&numOfBytes,
 			0,
-			reinterpret_cast<OVERLAPPED*>(&_sendEvent),
+			reinterpret_cast<OVERLAPPED*>(sendEvent),
 			nullptr
 		);
 
 		if (ret == SOCKET_ERROR)
 		{
-			int err = ::WSAGetLastError();
+			const int err = ::WSAGetLastError();
 			if (err != WSA_IO_PENDING)
 			{
+				delete sendEvent;
 				Disconnect();
+				return false;
 			}
 		}
+
+		return true;
 	}
 
 	void Session::ProcessRecv(int32_t numOfBytes)
@@ -189,5 +203,29 @@ namespace SE::Net
 	void Session::ProcessSend(Core::IocpEvent* event, int32_t numOfBytes)
 	{
 		Core::SendEvent* sendEvent = static_cast<Core::SendEvent*>(event);
+
+		if (numOfBytes <= 0)
+		{
+			delete sendEvent;
+			Disconnect();
+			return;
+		}
+
+		if (sendEvent->buffer == nullptr)
+		{
+			delete sendEvent;
+			Disconnect();
+			return;
+		}
+
+		if (numOfBytes != static_cast<int32_t>(sendEvent->buffer->size()))
+		{
+			// TODO: 何盒 价脚 犁傈价 贸府
+			delete sendEvent;
+			Disconnect();
+			return;
+		}
+
+		delete sendEvent;
 	}
 }

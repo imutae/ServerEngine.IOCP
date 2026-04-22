@@ -32,7 +32,7 @@ namespace SE::Net
 
 	public:
 		void Start();
-		void Send(const char* data, int32_t len);
+		bool Send(uint16_t packetId, const void* body, int32_t len);
 
 	public:
 		int64_t GetSessionId() const { return _sessionId; }
