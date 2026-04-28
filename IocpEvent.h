@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <memory>
 #include <vector>
+#include <WinSock2.h>
 
 namespace SE::Core
 {
@@ -13,7 +14,7 @@ namespace SE::Core
 		Send
 	};
 
-	struct IocpEvent : OVERLAPPED
+	struct IocpEvent : public OVERLAPPED
 	{
 		EventType type;
 
