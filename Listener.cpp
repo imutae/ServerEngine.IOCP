@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "Listener.h"
+
 #include "Session.h"
 
 namespace SE::Net
@@ -19,14 +20,20 @@ namespace SE::Net
 		return reinterpret_cast< HANDLE >( _listenSocket );
 	}
 
-	void Listener::Dispatch(Core::IocpEvent* event, int32_t numOfBytes)
+	void Listener::Dispatch(
+		Core::IocpEvent* event,
+		int32_t numOfBytes,
+		int32_t errorCode)
 	{
 		UNREFERENCED_PARAMETER(numOfBytes);
+
+		if ( event == nullptr )
+			return;
 
 		switch ( event->type )
 		{
 		case Core::EventType::Accept:
-			ProcessAccept(event);
+			ProcessAccept(event, errorCode);
 			break;
 
 		default:
@@ -35,7 +42,10 @@ namespace SE::Net
 		}
 	}
 
-	bool Listener::Initialize(std::function<void(SOCKET)> onAccept, const char* ip, uint16_t port)
+	bool Listener::Initialize(
+		std::function<void(SOCKET)> onAccept,
+		const char* ip,
+		uint16_t port)
 	{
 		if ( !onAccept || ip == nullptr )
 			return false;
@@ -48,13 +58,10 @@ namespace SE::Net
 			IPPROTO_TCP,
 			nullptr,
 			0,
-			WSA_FLAG_OVERLAPPED
-		);
+			WSA_FLAG_OVERLAPPED);
 
 		if ( _listenSocket == INVALID_SOCKET )
-		{
 			return false;
-		}
 
 		SOCKADDR_IN addr{};
 		addr.sin_family = AF_INET;
@@ -67,7 +74,10 @@ namespace SE::Net
 			return false;
 		}
 
-		if ( ::bind(_listenSocket, reinterpret_cast< SOCKADDR* >( &addr ), sizeof(addr)) == SOCKET_ERROR )
+		if ( ::bind(
+			_listenSocket,
+			reinterpret_cast< SOCKADDR* >( &addr ),
+			sizeof(addr)) == SOCKET_ERROR )
 		{
 			Close();
 			return false;
@@ -84,6 +94,7 @@ namespace SE::Net
 			Close();
 			return false;
 		}
+
 		return true;
 	}
 
@@ -91,10 +102,10 @@ namespace SE::Net
 	{
 		if ( _listenSocket == INVALID_SOCKET || _acceptEx == nullptr )
 			return false;
-		
+
 		return RegisterAccept();
 	}
-	
+
 	bool Listener::LoadAcceptEx()
 	{
 		DWORD bytes = 0;
@@ -109,8 +120,7 @@ namespace SE::Net
 			sizeof(_acceptEx),
 			&bytes,
 			nullptr,
-			nullptr
-		);
+			nullptr);
 
 		if ( ret == SOCKET_ERROR )
 			return false;
@@ -120,16 +130,19 @@ namespace SE::Net
 
 	bool Listener::RegisterAccept()
 	{
+		if ( _listenSocket == INVALID_SOCKET || _acceptEx == nullptr )
+			return false;
+
 		::ZeroMemory(static_cast< OVERLAPPED* >( &_acceptEvent ), sizeof(OVERLAPPED));
 
+		_acceptEvent.type = Core::EventType::Accept;
 		_acceptEvent.acceptSocket = ::WSASocket(
 			AF_INET,
 			SOCK_STREAM,
 			IPPROTO_TCP,
 			nullptr,
 			0,
-			WSA_FLAG_OVERLAPPED
-		);
+			WSA_FLAG_OVERLAPPED);
 
 		if ( _acceptEvent.acceptSocket == INVALID_SOCKET )
 			return false;
@@ -144,8 +157,7 @@ namespace SE::Net
 			sizeof(SOCKADDR_IN) + 16,
 			sizeof(SOCKADDR_IN) + 16,
 			&bytes,
-			reinterpret_cast< OVERLAPPED* >( &_acceptEvent )
-		);
+			reinterpret_cast< OVERLAPPED* >( &_acceptEvent ));
 
 		if ( ok == FALSE )
 		{
@@ -162,12 +174,27 @@ namespace SE::Net
 		return true;
 	}
 
-	void Listener::ProcessAccept(Core::IocpEvent* event)
+	void Listener::ProcessAccept(Core::IocpEvent* event, int32_t errorCode)
 	{
 		auto acceptEvent = static_cast< Core::AcceptEvent* >( event );
 
 		SOCKET clientSocket = acceptEvent->acceptSocket;
 		acceptEvent->acceptSocket = INVALID_SOCKET;
+
+		if ( errorCode != ERROR_SUCCESS )
+		{
+			if ( clientSocket != INVALID_SOCKET )
+				::closesocket(clientSocket);
+
+			// 서버 종료나 listener close 과정에서 취소된 AcceptEx는 정상 종료 흐름으로 본다.
+			if ( errorCode == ERROR_OPERATION_ABORTED || _listenSocket == INVALID_SOCKET )
+				return;
+
+			if ( RegisterAccept() == false )
+				assert(false && "RegisterAccept failed");
+
+			return;
+		}
 
 		if ( clientSocket == INVALID_SOCKET )
 		{
@@ -185,9 +212,7 @@ namespace SE::Net
 			::closesocket(clientSocket);
 
 			if ( RegisterAccept() == false )
-			{
 				assert(false && "RegisterAccept failed");
-			}
 
 			return;
 		}
@@ -195,9 +220,7 @@ namespace SE::Net
 		_createSession(clientSocket);
 
 		if ( RegisterAccept() == false )
-		{
 			assert(false && "RegisterAccept failed");
-		}
 	}
 
 	void Listener::Close()

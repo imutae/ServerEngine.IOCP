@@ -1,4 +1,6 @@
 #pragma once
+
+#include <cstdint>
 #include "IocpEvent.h"
 
 namespace SE::Core
@@ -11,6 +13,10 @@ namespace SE::Core
 		virtual ~IocpObject() = default;
 
 		virtual HANDLE GetHandle() = 0;
-		virtual void Dispatch(IocpEvent* iocpEvent, int32_t numOfBytes) = 0;
+
+		virtual void Dispatch(
+			IocpEvent* iocpEvent,
+			int32_t numOfBytes,
+			int32_t errorCode) = 0;
 	};
 }

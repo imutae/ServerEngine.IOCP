@@ -1,5 +1,9 @@
 #include "pch.h"
+
 #include "ServerEngine.h"
+
+#include <algorithm>
+
 #include "ServerContext.h"
 #include "IocpCore.h"
 #include "Listener.h"
@@ -7,15 +11,16 @@
 #include "Session.h"
 #include "IServerLogic.h"
 
-namespace SE {
-	ServerEngine::ServerEngine() 
+namespace SE
+{
+	ServerEngine::ServerEngine()
 		: _logic(nullptr)
 		, _context(nullptr)
 		, _workerThreads()
 		, _workerCount(std::max(1u, std::thread::hardware_concurrency()))
-		, _running(false) 
+		, _running(false)
+		, _wsaStarted(false)
 	{
-
 	}
 
 	ServerEngine::~ServerEngine()
@@ -25,88 +30,121 @@ namespace SE {
 
 	bool ServerEngine::Initialize(IServerLogic* logic, const char* ip, uint16_t port)
 	{
-		if ( logic == nullptr )
+		if ( logic == nullptr || ip == nullptr )
 			return false;
 
-		if ( _logic != nullptr || _context != nullptr )
+		if ( _logic != nullptr || _context != nullptr || _wsaStarted.load() )
 			return false;
 
-		if ( _running )
+		if ( _running.load() )
 			return false;
 
-		WSADATA wsaData;
+		WSADATA wsaData{};
 
 		if ( ::WSAStartup(MAKEWORD(2, 2), &wsaData) != 0 )
-		{
 			return false;
-		}
 
-		_logic = logic;
+		std::unique_ptr<Internal::ServerContext> context;
 
-		auto context = std::make_unique<Internal::ServerContext>();
+		auto rollback = [ &context ] ()
+			{
+				context.reset();
+				::WSACleanup();
+			};
+
+		context = std::make_unique<Internal::ServerContext>();
 
 		context->iocpCore = std::make_shared<Core::IocpCore>();
 		context->listener = std::make_shared<Net::Listener>();
 		context->sessionManager = std::make_shared<Net::SessionManager>();
 
 		bool listenerInitialized = context->listener->Initialize(
-			[ this, ctx = context.get() ] (SOCKET socket)
+			[ this, ctx = context.get(), logic ] (SOCKET socket)
 			{
-				auto session = ctx->sessionManager->CreateSession(socket, _logic);
+				auto session = ctx->sessionManager->CreateSession(socket, logic);
 
 				if ( session == nullptr )
-						{
+				{
 					::closesocket(socket);
 					return;
-					}
-				
-					if ( !ctx->iocpCore->Register(session.get()) )
-					{
-						session->Disconnect();
-						return;
-					}
+				}
 
-				_logic->OnConnected(session.get());
+				if ( ctx->iocpCore->Register(session.get()) == false )
+				{
+					session->Disconnect();
+					return;
+				}
+
+				logic->OnConnected(session.get());
 				session->Start();
 			},
 			ip,
-			port
-		);
+			port);
 
 		if ( listenerInitialized == false )
-			return false; // TODO: throw exception으로 변환 필요. Main loop이기 때문에 초기화 실패 시 서버가 종료되어야 함.
+		{
+			rollback();
+			return false;
+		}
 
 		if ( context->iocpCore->Register(context->listener.get()) == false )
+		{
+			rollback();
 			return false;
-		
+		}
+
 		if ( context->listener->StartAccept() == false )
+		{
+			rollback();
 			return false;
-		
+		}
+
+		_logic = logic;
 		_context = std::move(context);
+		_wsaStarted.store(true);
 
 		return true;
 	}
 
 	void ServerEngine::Run()
 	{
-		_running = true;
+		if ( _context == nullptr )
+			return;
+
+		bool expected = false;
+
+		if ( _running.compare_exchange_strong(expected, true) == false )
+			return;
+
 		StartWorkerThreads();
 	}
 
 	void ServerEngine::Shutdown()
 	{
-		_running = false;
+		const bool wasRunning = _running.exchange(false);
+
+		if ( wasRunning && _context != nullptr && _context->iocpCore != nullptr )
+		{
+			_context->iocpCore->PostShutdown(
+				static_cast< uint32_t >( _workerThreads.size() ));
+		}
+
 		JoinWorkerThreads();
-		WSACleanup();
+
+		_context.reset();
+		_logic = nullptr;
+
+		if ( _wsaStarted.exchange(false) )
+			::WSACleanup();
 	}
 
 	void ServerEngine::StartWorkerThreads()
 	{
-		uint32_t threadCount = std::thread::hardware_concurrency();
+		const uint32_t threadCount = _workerCount;
 
-		for (uint32_t i = 0; i < threadCount; i++)
+		for ( uint32_t i = 0; i < threadCount; ++i )
 		{
-			_workerThreads.emplace_back([this]()
+			_workerThreads.emplace_back([ this ] ()
 				{
 					WorkerThreadMain();
 				});
@@ -115,17 +153,22 @@ namespace SE {
 
 	void ServerEngine::JoinWorkerThreads()
 	{
-		for (auto& t : _workerThreads)
+		for ( auto& t : _workerThreads )
 		{
-			if (t.joinable())
+			if ( t.joinable() )
 				t.join();
 		}
+
+		_workerThreads.clear();
 	}
 
 	void ServerEngine::WorkerThreadMain()
 	{
-		while (_running)
+		while ( _running.load() )
 		{
+			if ( _context == nullptr || _context->iocpCore == nullptr )
+				break;
+
 			_context->iocpCore->Dispatch();
 		}
 	}

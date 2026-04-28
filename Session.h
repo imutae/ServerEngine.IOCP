@@ -16,7 +16,7 @@ namespace SE::Net
 	class Session : public Core::IocpObject
 	{
 	public:
-		Session(uint64_t sessionId);
+		explicit Session(uint64_t sessionId);
 		~Session() override;
 
 		Session(const Session&) = delete;
@@ -26,7 +26,11 @@ namespace SE::Net
 
 	public:
 		HANDLE GetHandle() override;
-		void Dispatch(Core::IocpEvent* event, int32_t numOfBytes) override;
+
+		void Dispatch(
+			Core::IocpEvent* event,
+			int32_t numOfBytes,
+			int32_t errorCode) override;
 
 	public:
 		bool Initialize(SOCKET socket, IServerLogic* logic);
@@ -43,8 +47,8 @@ namespace SE::Net
 		void PostRecv();
 
 	private:
-		void ProcessRecv(int32_t numOfBytes);
-		void ProcessSend(Core::IocpEvent* event, int32_t numOfBytes);
+		void ProcessRecv(int32_t numOfBytes, int32_t errorCode);
+		void ProcessSend(Core::IocpEvent* event, int32_t numOfBytes, int32_t errorCode);
 
 	private:
 		IServerLogic* _logic;
@@ -53,6 +57,7 @@ namespace SE::Net
 		uint64_t _sessionId;
 
 		Core::RecvEvent _recvEvent;
+
 		RecvBuffer _recvBuffer;
 	};
 }

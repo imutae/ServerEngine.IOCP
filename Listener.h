@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <functional>
+
 #include "IocpObject.h"
 #include "IocpEvent.h"
 
@@ -20,7 +23,11 @@ namespace SE::Net
 
 	public:
 		HANDLE GetHandle() override;
-		void Dispatch(Core::IocpEvent* event, int32_t numOfBytes) override;
+
+		void Dispatch(
+			Core::IocpEvent* event,
+			int32_t numOfBytes,
+			int32_t errorCode) override;
 
 	public:
 		bool Initialize(
@@ -29,12 +36,14 @@ namespace SE::Net
 			uint16_t port);
 
 		bool StartAccept();
+
 		void Close();
 
 	private:
 		bool RegisterAccept();
 		bool LoadAcceptEx();
-		void ProcessAccept(Core::IocpEvent* event);
+
+		void ProcessAccept(Core::IocpEvent* event, int32_t errorCode);
 
 	private:
 		SOCKET _listenSocket = INVALID_SOCKET;

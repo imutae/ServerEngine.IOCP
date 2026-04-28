@@ -6,9 +6,10 @@
 #include <thread>
 #include <vector>
 
-namespace SE {
-
-	namespace Internal {
+namespace SE
+{
+	namespace Internal
+	{
 		struct ServerContext;
 	}
 
@@ -41,6 +42,6 @@ namespace SE {
 		std::vector<std::thread> _workerThreads;
 		uint32_t _workerCount;
 		std::atomic<bool> _running;
+		std::atomic<bool> _wsaStarted;
 	};
-
 }

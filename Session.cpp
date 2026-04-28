@@ -1,16 +1,20 @@
 #include "pch.h"
+
 #include "Session.h"
+
+#include <limits>
+
 #include "PacketHeader.h"
 #include "IServerLogic.h"
 
 namespace SE::Net
 {
 	Session::Session(uint64_t sessionId)
+		: _logic(nullptr)
+		, _socket(INVALID_SOCKET)
+		, _isConnected(false)
+		, _sessionId(sessionId)
 	{
-		_logic = nullptr;
-		_socket = INVALID_SOCKET;
-		_isConnected = false;
-		_sessionId = sessionId;
 	}
 
 	Session::~Session()
@@ -20,19 +24,27 @@ namespace SE::Net
 
 	HANDLE Session::GetHandle()
 	{
-		return reinterpret_cast<HANDLE>(_socket);
+		return reinterpret_cast< HANDLE >( _socket );
 	}
 
-	void Session::Dispatch(Core::IocpEvent* event, int32_t numOfBytes)
+	void Session::Dispatch(
+		Core::IocpEvent* event,
+		int32_t numOfBytes,
+		int32_t errorCode)
 	{
-		switch (event->type)
+		if ( event == nullptr )
+			return;
+
+		switch ( event->type )
 		{
 		case Core::EventType::Recv:
-			ProcessRecv(numOfBytes);
+			ProcessRecv(numOfBytes, errorCode);
 			break;
+
 		case Core::EventType::Send:
-			ProcessSend(event, numOfBytes);
+			ProcessSend(event, numOfBytes, errorCode);
 			break;
+
 		default:
 			assert(false && "Unknown session event type");
 			break;
@@ -41,12 +53,11 @@ namespace SE::Net
 
 	bool Session::Initialize(SOCKET socket, IServerLogic* logic)
 	{
-		if (socket == INVALID_SOCKET || !logic)
+		if ( socket == INVALID_SOCKET || logic == nullptr )
 			return false;
 
 		_socket = socket;
 		_logic = logic;
-
 		_isConnected = true;
 
 		return _isConnected;
@@ -54,33 +65,38 @@ namespace SE::Net
 
 	void Session::Disconnect()
 	{
-		if (_isConnected == false)
+		if ( _isConnected == false )
 			return;
 
 		_isConnected = false;
 
-		if (_socket != INVALID_SOCKET)
+		if ( _socket != INVALID_SOCKET )
 		{
-			_logic->OnDisconnected(this);
+			if ( _logic != nullptr )
+				_logic->OnDisconnected(this);
+
 			::shutdown(_socket, SD_BOTH);
-			closesocket(_socket);
+			::closesocket(_socket);
 			_socket = INVALID_SOCKET;
 		}
 	}
 
 	void Session::PostRecv()
 	{
-		if (_socket == INVALID_SOCKET || _isConnected == false)
+		if ( _socket == INVALID_SOCKET || _isConnected == false )
 			return;
 
 		_recvBuffer.Clean();
 
-		if (_recvBuffer.FreeSize() == 0)
+		if ( _recvBuffer.FreeSize() == 0 )
 		{
 			// TODO: 버퍼 확장 or 에러 처리
 			Disconnect();
 			return;
 		}
+
+		::ZeroMemory(static_cast< OVERLAPPED* >( &_recvEvent ), sizeof(OVERLAPPED));
+		_recvEvent.type = Core::EventType::Recv;
 
 		_recvEvent.wsaBuf.buf = _recvBuffer.WritePos();
 		_recvEvent.wsaBuf.len = _recvBuffer.FreeSize();
@@ -94,14 +110,14 @@ namespace SE::Net
 			1,
 			&numOfBytes,
 			&flags,
-			reinterpret_cast<OVERLAPPED*>(&_recvEvent),
-			nullptr
-		);
+			reinterpret_cast< OVERLAPPED* >( &_recvEvent ),
+			nullptr);
 
-		if (ret == SOCKET_ERROR)
+		if ( ret == SOCKET_ERROR )
 		{
 			int err = ::WSAGetLastError();
-			if (err != WSA_IO_PENDING)
+
+			if ( err != WSA_IO_PENDING )
 			{
 				Disconnect();
 				return;
@@ -121,20 +137,20 @@ namespace SE::Net
 
 		constexpr size_t headerSize = sizeof(Packet::PacketHeader);
 		static_assert( headerSize <= std::numeric_limits<uint16_t>::max() );
-		
-		constexpr size_t maxBodySize = std::numeric_limits<uint16_t>::max() - headerSize;
-		
+
+		const size_t maxBodySize = std::numeric_limits<uint16_t>::max() - headerSize;
+
 		if ( static_cast< size_t >( len ) > maxBodySize )
 			return false;
-		
-		const uint16_t packetSize = static_cast< uint16_t >( headerSize + static_cast< size_t >( len ) );
+
+		const uint16_t packetSize =
+			static_cast< uint16_t >( headerSize + static_cast< size_t >( len ) );
 
 		Core::SendEvent* sendEvent = new Core::SendEvent();
 
 		sendEvent->buffer = std::make_shared<std::vector<char>>(packetSize);
 
 		Packet::PacketHeader header;
-
 		header.size = packetSize;
 		header.id = packetId;
 
@@ -153,8 +169,7 @@ namespace SE::Net
 			&numOfBytes,
 			0,
 			reinterpret_cast< OVERLAPPED* >( sendEvent ),
-			nullptr
-		);
+			nullptr);
 
 		if ( ret == SOCKET_ERROR )
 		{
@@ -171,43 +186,50 @@ namespace SE::Net
 		return true;
 	}
 
-	void Session::ProcessRecv(int32_t numOfBytes)
+	void Session::ProcessRecv(int32_t numOfBytes, int32_t errorCode)
 	{
-		if (numOfBytes == 0)
+		if ( errorCode != ERROR_SUCCESS )
 		{
 			Disconnect();
 			return;
 		}
 
-		if (_recvBuffer.OnWrite(numOfBytes) == false)
+		if ( numOfBytes == 0 )
 		{
 			Disconnect();
 			return;
 		}
 
-		while (true)
+		if ( _recvBuffer.OnWrite(numOfBytes) == false )
 		{
-			if (_recvBuffer.DataSize() < sizeof(Packet::PacketHeader))
+			Disconnect();
+			return;
+		}
+
+		while ( true )
+		{
+			if ( _recvBuffer.DataSize() < static_cast< int32_t >( sizeof(Packet::PacketHeader) ) )
 				break;
 
 			Packet::PacketHeader header;
 			::memcpy(&header, _recvBuffer.ReadPos(), sizeof(Packet::PacketHeader));
 
-			if (header.size < sizeof(Packet::PacketHeader))
+			if ( header.size < sizeof(Packet::PacketHeader) )
 			{
 				Disconnect();
 				return;
 			}
 
-			if (_recvBuffer.DataSize() < header.size)
+			if ( _recvBuffer.DataSize() < header.size )
 				break;
 
 			const char* body = _recvBuffer.ReadPos() + sizeof(Packet::PacketHeader);
-			const int32_t bodyLen = header.size - static_cast<int32_t>(sizeof(Packet::PacketHeader));
+			const int32_t bodyLen =
+				header.size - static_cast< int32_t >( sizeof(Packet::PacketHeader) );
 
 			_logic->DispatchPacket(this, header.id, body, bodyLen);
 
-			if (_recvBuffer.OnRead(header.size) == false)
+			if ( _recvBuffer.OnRead(header.size) == false )
 			{
 				Disconnect();
 				return;
@@ -217,25 +239,35 @@ namespace SE::Net
 		PostRecv();
 	}
 
-	void Session::ProcessSend(Core::IocpEvent* event, int32_t numOfBytes)
+	void Session::ProcessSend(
+		Core::IocpEvent* event,
+		int32_t numOfBytes,
+		int32_t errorCode)
 	{
-		Core::SendEvent* sendEvent = static_cast<Core::SendEvent*>(event);
+		Core::SendEvent* sendEvent = static_cast< Core::SendEvent* >( event );
 
-		if (numOfBytes <= 0)
+		if ( errorCode != ERROR_SUCCESS )
 		{
 			delete sendEvent;
 			Disconnect();
 			return;
 		}
 
-		if (sendEvent->buffer == nullptr)
+		if ( numOfBytes <= 0 )
 		{
 			delete sendEvent;
 			Disconnect();
 			return;
 		}
 
-		if (numOfBytes != static_cast<int32_t>(sendEvent->buffer->size()))
+		if ( sendEvent->buffer == nullptr )
+		{
+			delete sendEvent;
+			Disconnect();
+			return;
+		}
+
+		if ( numOfBytes != static_cast< int32_t >( sendEvent->buffer->size() ) )
 		{
 			// TODO: 부분 송신 재전송 처리
 			delete sendEvent;

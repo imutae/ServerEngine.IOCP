@@ -1,22 +1,31 @@
 #pragma once
 
+#include <cstdint>
+
 namespace SE::Core
 {
-    class IocpObject;
+	class IocpObject;
 
 	class IocpCore
 	{
-    public:
-        IocpCore();
-        ~IocpCore();
+	public:
+		IocpCore();
+		~IocpCore();
 
-    public:
-        HANDLE GetHandle() const { return _iocpHandle; }
+		IocpCore(const IocpCore&) = delete;
+		IocpCore& operator=(const IocpCore&) = delete;
+		IocpCore(IocpCore&&) = delete;
+		IocpCore& operator=(IocpCore&&) = delete;
 
-        bool Register(IocpObject* iocpObject);
-        bool Dispatch(uint32_t timeoutMs = INFINITE);
+	public:
+		HANDLE GetHandle() const { return _iocpHandle; }
 
-    private:
-        HANDLE _iocpHandle = INVALID_HANDLE_VALUE;
+		bool Register(IocpObject* iocpObject);
+		bool Dispatch(uint32_t timeoutMs = INFINITE);
+
+		bool PostShutdown(uint32_t count);
+
+	private:
+		HANDLE _iocpHandle = INVALID_HANDLE_VALUE;
 	};
 }
