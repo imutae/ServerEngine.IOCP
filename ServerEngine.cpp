@@ -25,17 +25,18 @@ namespace SE {
 
 	bool ServerEngine::Initialize(IServerLogic* logic, const char* ip, uint16_t port)
 	{
-		if(logic == nullptr)
+		if ( logic == nullptr )
 			return false;
 
-		if (_logic != nullptr || _context != nullptr)
+		if ( _logic != nullptr || _context != nullptr )
 			return false;
 
-		if (_running)
+		if ( _running )
 			return false;
 
 		WSADATA wsaData;
-		if (::WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+
+		if ( ::WSAStartup(MAKEWORD(2, 2), &wsaData) != 0 )
 		{
 			return false;
 		}
@@ -43,37 +44,44 @@ namespace SE {
 		_logic = logic;
 
 		auto context = std::make_unique<Internal::ServerContext>();
+
 		context->iocpCore = std::make_shared<Core::IocpCore>();
 		context->listener = std::make_shared<Net::Listener>();
 		context->sessionManager = std::make_shared<Net::SessionManager>();
 
 		bool listenerInitialized = context->listener->Initialize(
-			[ctx = context.get()](Core::IocpObject* obj) -> bool
-			{
-				return ctx->iocpCore->Register(obj);
-			},
-			[this, ctx = context.get()](SOCKET socket)
+			[ this, ctx = context.get() ] (SOCKET socket)
 			{
 				auto session = ctx->sessionManager->CreateSession(socket, _logic);
 
-				if (!ctx->iocpCore->Register(session.get()))
-				{
-					session->Disconnect();
+				if ( session == nullptr )
+						{
+					::closesocket(socket);
 					return;
-				}
+					}
+				
+					if ( !ctx->iocpCore->Register(session.get()) )
+					{
+						session->Disconnect();
+						return;
+					}
 
-				session->Start();
 				_logic->OnConnected(session.get());
+				session->Start();
 			},
 			ip,
 			port
 		);
 
-		if(listenerInitialized == false)
-			return false;				// TODO: throw exceptionÀ¸·Î º¯È¯ ÇÊ¿ä. Main loopÀÌ±â ¶§¹®¿¡ ÃÊ±âÈ­ ½ÇÆÐ ½Ã ¼­¹ö°¡ Á¾·áµÇ¾î¾ß ÇÔ.
+		if ( listenerInitialized == false )
+			return false; // TODO: throw exceptionìœ¼ë¡œ ë³€í™˜ í•„ìš”. Main loopì´ê¸° ë•Œë¬¸ì— ì´ˆê¸°í™” ì‹¤íŒ¨ ì‹œ ì„œë²„ê°€ ì¢…ë£Œë˜ì–´ì•¼ í•¨.
 
-		context->iocpCore->Register(context->listener.get());
-
+		if ( context->iocpCore->Register(context->listener.get()) == false )
+			return false;
+		
+		if ( context->listener->StartAccept() == false )
+			return false;
+		
 		_context = std::move(context);
 
 		return true;

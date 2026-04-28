@@ -1,6 +1,10 @@
 #pragma once
-#include <vector>
+
+#include <atomic>
+#include <cstdint>
+#include <memory>
 #include <thread>
+#include <vector>
 
 namespace SE {
 
@@ -18,7 +22,6 @@ namespace SE {
 
 		ServerEngine(const ServerEngine&) = delete;
 		ServerEngine& operator=(const ServerEngine&) = delete;
-
 		ServerEngine(ServerEngine&&) = delete;
 		ServerEngine& operator=(ServerEngine&&) = delete;
 
@@ -35,10 +38,9 @@ namespace SE {
 	private:
 		IServerLogic* _logic;
 		std::unique_ptr<Internal::ServerContext> _context;
-
 		std::vector<std::thread> _workerThreads;
 		uint32_t _workerCount;
-
 		std::atomic<bool> _running;
 	};
+
 }

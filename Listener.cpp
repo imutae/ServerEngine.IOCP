@@ -1,4 +1,5 @@
-﻿#include "pch.h"
+#include "pch.h"
+
 #include "Listener.h"
 #include "Session.h"
 
@@ -15,31 +16,32 @@ namespace SE::Net
 
 	HANDLE Listener::GetHandle()
 	{
-		return reinterpret_cast<HANDLE>(_listenSocket);
+		return reinterpret_cast< HANDLE >( _listenSocket );
 	}
 
 	void Listener::Dispatch(Core::IocpEvent* event, int32_t numOfBytes)
 	{
 		UNREFERENCED_PARAMETER(numOfBytes);
 
-		switch (event->type)
+		switch ( event->type )
 		{
 		case Core::EventType::Accept:
 			ProcessAccept(event);
 			break;
+
 		default:
 			assert(false && "Unknown listener event type");
 			break;
 		}
 	}
 
-	bool Listener::Initialize(std::function<bool(Core::IocpObject*)> iocpObjectRegister, std::function<void(SOCKET)> onAccept, const char* ip, uint16_t port)
+	bool Listener::Initialize(std::function<void(SOCKET)> onAccept, const char* ip, uint16_t port)
 	{
-		if (!onAccept || !iocpObjectRegister || ip == nullptr)
+		if ( !onAccept || ip == nullptr )
 			return false;
 
-		_iocpObjectRegister = iocpObjectRegister;
 		_createSession = onAccept;
+
 		_listenSocket = ::WSASocket(
 			AF_INET,
 			SOCK_STREAM,
@@ -49,7 +51,7 @@ namespace SE::Net
 			WSA_FLAG_OVERLAPPED
 		);
 
-		if (_listenSocket == INVALID_SOCKET)
+		if ( _listenSocket == INVALID_SOCKET )
 		{
 			return false;
 		}
@@ -57,47 +59,42 @@ namespace SE::Net
 		SOCKADDR_IN addr{};
 		addr.sin_family = AF_INET;
 		addr.sin_port = ::htons(port);
-		
-		if (::inet_pton(AF_INET, ip, &addr.sin_addr) != 1)
+
+		if ( ::inet_pton(AF_INET, ip, &addr.sin_addr) != 1 )
 		{
-			// TODO: 추후 에러 처리 추가 필요
+			// TODO: 에러 처리 추가
 			Close();
 			return false;
 		}
 
-		if (::bind(_listenSocket, reinterpret_cast<SOCKADDR*>(&addr), sizeof(addr)) == SOCKET_ERROR)
-		{
-			Close();
-			return false;
-		}
-
-		if (LoadAcceptEx() == false)
+		if ( ::bind(_listenSocket, reinterpret_cast< SOCKADDR* >( &addr ), sizeof(addr)) == SOCKET_ERROR )
 		{
 			Close();
 			return false;
 		}
 
-		if (::listen(_listenSocket, SOMAXCONN) == SOCKET_ERROR)
+		if ( LoadAcceptEx() == false )
 		{
 			Close();
 			return false;
 		}
 
-		if (_iocpObjectRegister(this) == false)
+		if ( ::listen(_listenSocket, SOMAXCONN) == SOCKET_ERROR )
 		{
 			Close();
 			return false;
 		}
-
-		if (RegisterAccept() == false)
-		{
-			Close();
-			return false;
-		}
-
 		return true;
 	}
 
+	bool Listener::StartAccept()
+	{
+		if ( _listenSocket == INVALID_SOCKET || _acceptEx == nullptr )
+			return false;
+		
+		return RegisterAccept();
+	}
+	
 	bool Listener::LoadAcceptEx()
 	{
 		DWORD bytes = 0;
@@ -115,7 +112,7 @@ namespace SE::Net
 			nullptr
 		);
 
-		if (ret == SOCKET_ERROR)
+		if ( ret == SOCKET_ERROR )
 			return false;
 
 		return _acceptEx != nullptr;
@@ -123,7 +120,8 @@ namespace SE::Net
 
 	bool Listener::RegisterAccept()
 	{
-		::ZeroMemory(static_cast<OVERLAPPED*>(&_acceptEvent), sizeof(OVERLAPPED));
+		::ZeroMemory(static_cast< OVERLAPPED* >( &_acceptEvent ), sizeof(OVERLAPPED));
+
 		_acceptEvent.acceptSocket = ::WSASocket(
 			AF_INET,
 			SOCK_STREAM,
@@ -133,7 +131,7 @@ namespace SE::Net
 			WSA_FLAG_OVERLAPPED
 		);
 
-		if (_acceptEvent.acceptSocket == INVALID_SOCKET)
+		if ( _acceptEvent.acceptSocket == INVALID_SOCKET )
 			return false;
 
 		DWORD bytes = 0;
@@ -146,13 +144,14 @@ namespace SE::Net
 			sizeof(SOCKADDR_IN) + 16,
 			sizeof(SOCKADDR_IN) + 16,
 			&bytes,
-			reinterpret_cast<OVERLAPPED*>(&_acceptEvent)
+			reinterpret_cast< OVERLAPPED* >( &_acceptEvent )
 		);
 
-		if (ok == FALSE)
+		if ( ok == FALSE )
 		{
 			int err = ::WSAGetLastError();
-			if (err != WSA_IO_PENDING)
+
+			if ( err != WSA_IO_PENDING )
 			{
 				::closesocket(_acceptEvent.acceptSocket);
 				_acceptEvent.acceptSocket = INVALID_SOCKET;
@@ -165,35 +164,37 @@ namespace SE::Net
 
 	void Listener::ProcessAccept(Core::IocpEvent* event)
 	{
-		auto acceptEvent = static_cast<Core::AcceptEvent*>(event);
+		auto acceptEvent = static_cast< Core::AcceptEvent* >( event );
 
 		SOCKET clientSocket = acceptEvent->acceptSocket;
 		acceptEvent->acceptSocket = INVALID_SOCKET;
 
-		if (clientSocket == INVALID_SOCKET)
+		if ( clientSocket == INVALID_SOCKET )
 		{
 			assert(false && "Invalid accepted socket");
 			return;
 		}
 
-		if (::setsockopt(
+		if ( ::setsockopt(
 			clientSocket,
 			SOL_SOCKET,
 			SO_UPDATE_ACCEPT_CONTEXT,
-			reinterpret_cast<const char*>(&_listenSocket),
-			sizeof(_listenSocket)) == SOCKET_ERROR)
+			reinterpret_cast< const char* >( &_listenSocket ),
+			sizeof(_listenSocket)) == SOCKET_ERROR )
 		{
 			::closesocket(clientSocket);
-			if (RegisterAccept() == false)
+
+			if ( RegisterAccept() == false )
 			{
 				assert(false && "RegisterAccept failed");
 			}
+
 			return;
 		}
 
 		_createSession(clientSocket);
 
-		if (RegisterAccept() == false)
+		if ( RegisterAccept() == false )
 		{
 			assert(false && "RegisterAccept failed");
 		}
@@ -201,13 +202,13 @@ namespace SE::Net
 
 	void Listener::Close()
 	{
-		if (_acceptEvent.acceptSocket != INVALID_SOCKET)
+		if ( _acceptEvent.acceptSocket != INVALID_SOCKET )
 		{
 			::closesocket(_acceptEvent.acceptSocket);
 			_acceptEvent.acceptSocket = INVALID_SOCKET;
 		}
 
-		if (_listenSocket != INVALID_SOCKET)
+		if ( _listenSocket != INVALID_SOCKET )
 		{
 			::closesocket(_listenSocket);
 			_listenSocket = INVALID_SOCKET;

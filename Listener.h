@@ -1,4 +1,5 @@
 #pragma once
+
 #include "IocpObject.h"
 #include "IocpEvent.h"
 
@@ -14,7 +15,6 @@ namespace SE::Net
 
 		Listener(const Listener&) = delete;
 		Listener& operator=(const Listener&) = delete;
-
 		Listener(Listener&&) = delete;
 		Listener& operator=(Listener&&) = delete;
 
@@ -24,10 +24,11 @@ namespace SE::Net
 
 	public:
 		bool Initialize(
-			std::function<bool(Core::IocpObject*)> iocpObjectRegister,
 			std::function<void(SOCKET)> onAccept,
 			const char* ip,
 			uint16_t port);
+
+		bool StartAccept();
 		void Close();
 
 	private:
@@ -36,10 +37,8 @@ namespace SE::Net
 		void ProcessAccept(Core::IocpEvent* event);
 
 	private:
-		std::function<bool(Core::IocpObject*)> _iocpObjectRegister;
 		SOCKET _listenSocket = INVALID_SOCKET;
 		LPFN_ACCEPTEX _acceptEx = nullptr;
-
 		Core::AcceptEvent _acceptEvent;
 		std::function<void(SOCKET)> _createSession;
 	};

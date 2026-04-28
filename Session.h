@@ -1,4 +1,7 @@
 #pragma once
+
+#include <cstdint>
+
 #include "IocpObject.h"
 #include "IocpEvent.h"
 #include "RecvBuffer.h"
@@ -18,7 +21,6 @@ namespace SE::Net
 
 		Session(const Session&) = delete;
 		Session& operator=(const Session&) = delete;
-
 		Session(Session&&) = delete;
 		Session& operator=(Session&&) = delete;
 
@@ -35,7 +37,7 @@ namespace SE::Net
 		bool Send(uint16_t packetId, const void* body, int32_t len);
 
 	public:
-		int64_t GetSessionId() const { return _sessionId; }
+		uint64_t GetSessionId() const { return _sessionId; }
 
 	private:
 		void PostRecv();
@@ -46,14 +48,11 @@ namespace SE::Net
 
 	private:
 		IServerLogic* _logic;
-
 		SOCKET _socket;
 		bool _isConnected;
-		int64_t _sessionId;
+		uint64_t _sessionId;
 
 		Core::RecvEvent _recvEvent;
-		Core::SendEvent _sendEvent;
-
 		RecvBuffer _recvBuffer;
 	};
 }
