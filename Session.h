@@ -1,6 +1,12 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <vector>
 
 #include "IocpObject.h"
 #include "IocpEvent.h"
@@ -13,8 +19,19 @@ namespace SE
 
 namespace SE::Net
 {
-	class Session : public Core::IocpObject
+	class Session
+		: public Core::IocpObject
+		, public std::enable_shared_from_this<Session>
 	{
+	private:
+		enum class SessionState : uint8_t
+		{
+			Created,
+			Connected,
+			Closing,
+			Closed
+		};
+
 	public:
 		explicit Session(uint64_t sessionId);
 		~Session() override;
@@ -43,6 +60,8 @@ namespace SE::Net
 	public:
 		uint64_t GetSessionId() const { return _sessionId; }
 
+		void SetOnClosed(std::function<void(uint64_t)> onClosed);
+
 	private:
 		void PostRecv();
 
@@ -51,13 +70,32 @@ namespace SE::Net
 		void ProcessSend(Core::IocpEvent* event, int32_t numOfBytes, int32_t errorCode);
 
 	private:
+		bool PostSendLocked(size_t offset, bool& shouldCompletePendingIo);
+		void ClearSendQueueLocked();
+
+	private:
+		void AddPendingIo();
+		void CompletePendingIo();
+		void TryFinalizeClose();
+
+		bool IsConnected() const;
+
+	private:
 		IServerLogic* _logic;
 		SOCKET _socket;
-		bool _isConnected;
-		uint64_t _sessionId;
+		const uint64_t _sessionId;
+
+		std::atomic<SessionState> _state;
+		std::atomic<int32_t> _pendingIoCount;
+
+		std::mutex _socketLock;
+
+		std::function<void(uint64_t)> _onClosed;
 
 		Core::RecvEvent _recvEvent;
-
 		RecvBuffer _recvBuffer;
+
+		std::deque<std::shared_ptr<std::vector<char>>> _sendQueue;
+		bool _sendPending;
 	};
 }

@@ -1,56 +1,65 @@
 #pragma once
-#include <WinSock2.h>
+
+#include <cstddef>
+#include <memory>
 #include <vector>
 
 namespace SE::Core
 {
-	enum class EventType : uint8_t
+	enum class EventType
 	{
 		Accept,
 		Recv,
 		Send
 	};
 
-	struct IocpEvent : public OVERLAPPED
+	struct IocpEvent : OVERLAPPED
 	{
 		EventType type;
 
-		IocpEvent(EventType t) : type(t)
+		IocpEvent()
+			: OVERLAPPED{}
+			, type(EventType::Recv)
 		{
-			::ZeroMemory(static_cast<OVERLAPPED*>(this), sizeof(OVERLAPPED));
+		}
+
+		explicit IocpEvent(EventType eventType)
+			: OVERLAPPED{}
+			, type(eventType)
+		{
 		}
 	};
 
-	struct AcceptEvent : public IocpEvent
+	struct AcceptEvent : IocpEvent
 	{
-		SOCKET acceptSocket;
-		char buffer[(sizeof(sockaddr_in) + 16) * 2];
+		SOCKET acceptSocket = INVALID_SOCKET;
+		char buffer[ ( sizeof(SOCKADDR_IN) + 16 ) * 2 ]{};
 
-		AcceptEvent() : IocpEvent(EventType::Accept), acceptSocket(INVALID_SOCKET)
+		AcceptEvent()
+			: IocpEvent(EventType::Accept)
 		{
-			::ZeroMemory(buffer, sizeof(buffer));
 		}
 	};
 
-	struct RecvEvent : public IocpEvent
+	struct RecvEvent : IocpEvent
 	{
-		WSABUF wsaBuf;
+		WSABUF wsaBuf{};
 
-		RecvEvent() : IocpEvent(EventType::Recv)
+		RecvEvent()
+			: IocpEvent(EventType::Recv)
 		{
-			::ZeroMemory(&wsaBuf, sizeof(wsaBuf));
 		}
 	};
 
-	struct SendEvent : public IocpEvent
+	struct SendEvent : IocpEvent
 	{
-		WSABUF wsaBuf;
+		WSABUF wsaBuf{};
 		std::shared_ptr<std::vector<char>> buffer;
+		size_t offset = 0;
 
-		SendEvent() : IocpEvent(EventType::Send)
+		SendEvent()
+			: IocpEvent(EventType::Send)
 		{
-			::ZeroMemory(&wsaBuf, sizeof(wsaBuf));
 		}
 	};
 }
-
